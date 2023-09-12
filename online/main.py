@@ -228,4 +228,8 @@ st.write(
     """
 )
 st.header("Code")
-st.write("**https://github.com/Tower-Babel/project1/blob/main/online/jpx-stockprices.ipynb**")
+st.write(
+    """
+        https://github.com/Tower-Babel/project1/blob/main/online/jpx-stockprices.ipynb
+    """
+)
