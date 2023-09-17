@@ -1,6 +1,37 @@
 import streamlit as st
 from PIL import Image
+import pandas as pd
+import numpy as np
 
+N =  1000
+zip_file_path = 'stock_prices.csv.zip'
+stock_prices = pd.read_csv(zip_file_path, compression='zip')
+#stock_prices = pd.read_csv("../input/jpx-tokyo-stock-exchange-prediction/train_files/stock_prices.csv")
+stock_prices_data = pd.read_csv("stock_prices.csv")
+stock_prices_temp = pd.read_csv("stock_prices.csv", nrows=N)
+#stock_prices = pd.read_csv("stock_prices.csv")
+#stock_list = pd.read_csv("stock_list.csv")
+
+## start here
+import py7zr
+
+
+
+# Assuming the extracted files are named stock_prices.7z.001 and stock_prices.7z.002
+file_names = ["stock_prices.7z.001", "stock_prices.7z.002"]
+
+# Initialize an empty DataFrame to store the data
+combined_df = pd.DataFrame()
+
+# Read and concatenate the CSV files
+for file_name in file_names:
+    df = pd.read_csv(file_name)
+    combined_df = pd.concat([combined_df, df], ignore_index=True)
+
+# You now have the combined data in the combined_df DataFrame.
+stock_list = combined_df
+
+##end here
 st.title(" :blue[Project 1:] ")
 st.title(" :blue[JPX-Tokyo Stock Exchange Data] ")
 
@@ -79,16 +110,47 @@ st.write(
     """
 
 )
-image1 = Image.open("online/img_1.jpg")
-image2 = Image.open("online/img_2.jpg")
-image3 = Image.open("online/img_3.jpg")
-image4 = Image.open("online/img_4.jpg")
-image5 = Image.open("online/img_5.jpg")
-image6 = Image.open("online/img_6.jpg")
-image7 = Image.open("online/img_7.jpg")
+st.write(stock_prices_temp)
+stock_prices.nunique()
+sample_date = stock_prices.Date.unique()
+st.write(sample_date)
+summary_stats = stock_prices_data.describe()
+st.write(summary_stats)
 
-st.image(image1, caption=None)
-st.image(image2, caption=None)
+
+
+stock_prices["Date"] = pd.to_datetime(stock_prices["Date"])
+stock_list["EffectiveDate"] = pd.to_datetime(stock_list["EffectiveDate"])
+stock_list["Name"] = pd.DataFrame(stock_list["Name"])
+
+mcd_info = stock_list[stock_list["Name"] == "McDonald's Holdings Company(Japan),Ltd."]
+st.write("McDonald's Holdings Company(Japan),Ltd.", " Securities code: ", mcd_info)
+tmpdf = stock_prices[stock_prices["SecuritiesCode"]==2702].reset_index(drop=True)
+st.write(tmpdf.head(3))
+
+#Currency in JPY to covert to USD to compare close amount
+exchange_rate = .0068 # 1 USD to 146.78 JPY in September
+jpy_at_close = tmpdf["Close"].values[0]
+convert_usd = jpy_at_close * exchange_rate
+st.write("Price is JPY", jpy_at_close, "Price in USD", convert_usd)
+
+
+tmpdf = stock_prices[stock_prices["SecuritiesCode"] == 2702].reset_index(drop=True)
+
+rate = 0.0068
+
+# Function created
+def jpy_to_usd(jpy, exchange_rate):
+    return jpy * exchange_rate
+
+# Columns to convert
+columns_to_convert = ["Open", "High", "Low", "Close"]
+
+# Convert JPY to USD
+for column in columns_to_convert:
+    tmpdf[column] = tmpdf[column].apply(lambda x: jpy_to_usd(x, rate))
+
+st.write(tmpdf.head(3))
 
 st.header("Pre-processing the Data")
 st.write(
@@ -134,7 +196,7 @@ st.write(
     
     """
 )
-st.image(image3, caption=None)
+#st.image(image3, caption=None)
 
 st.header("Data Understanding/Visualization")
 st.write(
@@ -144,7 +206,26 @@ st.write(
     And lets compare the amount of shares traded so we can see if it relates to the return or closing price.
     """
 )
-st.image(image4, caption=None)
+
+st.title("McDonald's Stock Metrics")
+
+# Filter 
+mcdonalds_train = stock_prices[stock_prices["SecuritiesCode"] == 2702]
+
+mcdonalds_train['Close'] = mcdonalds_train['Close'].apply(lambda x: jpy_to_usd(x, rate))
+
+# Calculate metrics
+close_avg = mcdonalds_train.groupby('Date')['Close'].mean().rename('Closing Price (USD)')
+returns = mcdonalds_train.groupby('Date')['Target'].mean().mul(100).rename('Average Return')
+vol_avg = mcdonalds_train.groupby('Date')['Volume'].mean().rename('Volume')
+
+# Plot the metrics for McDonald's stock using st.line_chart
+st.line_chart(returns.rename('Stock Return (%)'))
+st.line_chart(close_avg.rename('Closing Price (USD)'))
+st.line_chart(vol_avg.rename('Shares Traded'))
+
+
+
 
 st.header("Storytelling")
 st.write(
@@ -162,7 +243,7 @@ st.write(
     """
 
 )
-st.image(image5, caption=None)
+#st.image(image5, caption=None)
 
 st.write(
     """
@@ -183,10 +264,21 @@ st.write(
     """
 )
 
-st.image(image6, caption=None)
+
+tmpdf['Year'] = tmpdf['Date'].dt.year
+years = tmpdf.groupby('Year')['Target'].mean() * 100
+yearly_avg_returns = years.to_dict()
+
+sorted_yearly_avg_returns = dict(sorted(yearly_avg_returns.items()))
+df = pd.DataFrame(list(sorted_yearly_avg_returns.items()), columns=['Year', 'Avg_return'])
+
+st.title("Yearly Average Stock Returns (McDonald's)")
+
+# Display the bar chart using st.bar_chart
+st.bar_chart(df.set_index('Year'))
 
 
-st.image(image7, caption=None)
+#st.image(image7, caption=None)
 
 st.header("Impact Section")
 
@@ -205,6 +297,29 @@ st.write(
 
     """
 )
+
+mcdonalds_data = stock_prices[stock_prices["SecuritiesCode"] == 2702]
+mcdonalds_data['Returns'] = mcdonalds_data['Close'].pct_change()
+
+risk_free_rate = 0.02
+time_periods = [1, 2]  # in years
+sharpe_ratios = []
+
+for period in time_periods:
+    annualized_return = mcdonalds_data['Returns'].mean() * 252  # 252 trading days in a year
+    annualized_std_dev = mcdonalds_data['Returns'].std() * (252 ** 0.5)  # Annualized standard deviation
+
+    sharpe_ratio = (annualized_return - risk_free_rate) / annualized_std_dev
+    sharpe_ratios.append(sharpe_ratio)
+
+sharpe_df = pd.DataFrame({'Time Period (Years)': time_periods, 'Sharpe Ratio': sharpe_ratios})
+
+# Create a Streamlit app
+st.title("McDonald's Stock Sharpe Ratios")
+
+# Display the Sharpe ratios using st.line_chart
+st.line_chart(sharpe_df.set_index('Time Period (Years)'))
+
 
 st.header("References")
 st.write(
@@ -228,8 +343,5 @@ st.write(
     """
 )
 st.header("Code")
-st.write(
-    """
-        https://github.com/Tower-Babel/project1/blob/main/online/jpx-stockprices.ipynb
-    """
-)
+st.write("**https://github.com/Tower-Babel/project1/blob/main/online/jpx-stockprices.ipynb**")
+
